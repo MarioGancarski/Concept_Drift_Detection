@@ -1,14 +1,9 @@
 import math
-from sklearn.ensemble import BaggingClassifier
-from sklearn.neural_network import MLPClassifier
-from sklearn.tree import DecisionTreeClassifier
-
-def create_model():
-    
-    return MLPClassifier()
+from models import create_model_stream
+from sklearn.metrics import confusion_matrix
 
 
-class PredictionManager():
+class DDM():
   
 
     def __init__(self, X, y):
@@ -35,10 +30,11 @@ class PredictionManager():
         self.training_data_y = list()
 
         # Creating the machine learning model we will use
-        self.model = create_model()
+        self.model = create_model_stream()
 
         # Creating the concept drift detector instance
         self.cdd = Concept_Drift_Detector()
+        self.drift_count = 0
 
         # List with every possible label for the model targets 
         self.targets = list(set(y))
@@ -48,12 +44,13 @@ class PredictionManager():
 
         # This boolean is set to True if the data size for model learning is high enough - I set that to 30
         self.data_size = False
-
+        self.predicts = list()
 
     # Run_all_steps function, called by our main function: 
 
     def run_all_steps(self):
         
+        self.predicts.append(0)
         while self.index < len(self.X)-1 :
 
             self.model_train()  
@@ -62,10 +59,11 @@ class PredictionManager():
             self.check_drift()
             self.check_warning_occuring()
             self.index += 1
+        self.predicts.append(0)
 
-        #print(confusion_matrix(self.y,self.predict))
+        print(confusion_matrix(self.y, self.predicts))
 
-        return self.error_rate_list, self.nb_errors * 100 / len(self.y)
+        return self.error_rate_list, 100 * (1 - self.nb_errors / len(self.y))
 
 
 
@@ -85,10 +83,12 @@ class PredictionManager():
 
         if self.drift_occured:
             if len(self.training_data_X)>30 :
-                self.model = create_model()
+                self.model = create_model_stream()
                 self.model.partial_fit(self.training_data_X, self.training_data_y, self.targets)
                 self.drift_occured = False
                 self.data_size = False
+                self.drift_count += 1
+
             else:
                 self.data_size = True
         
@@ -101,12 +101,13 @@ class PredictionManager():
     def model_predict(self):
         
         predict = self.model.predict([self.X[self.index+1]])
-
+        self.predicts.append(predict[0])
         if predict[0] == self.y[self.index+1]:
             self.prediction = 0
         else:
             self.prediction = 1
             self.nb_errors += 1
+
 
 
     def cdd_step(self):
