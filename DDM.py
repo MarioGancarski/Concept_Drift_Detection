@@ -46,6 +46,7 @@ class DDM():
         self.data_size = False
         self.predicts = list()
 
+
     # Run_all_steps function, called by our main function: 
 
     def run_all_steps(self):
@@ -61,7 +62,8 @@ class DDM():
             self.index += 1
         self.predicts.append(0)
 
-        print(confusion_matrix(self.y, self.predicts))
+        #print(confusion_matrix(self.y, self.predicts))
+        print(self.drift_count)
 
         return self.error_rate_list, 100 * (1 - self.nb_errors / len(self.y))
 

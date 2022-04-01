@@ -6,7 +6,7 @@ def import_dataset(dataset_name):
     y = list()
     first = True
     with open(dataset_name, newline='') as csvfile:
-        spamreader = csv.reader(csvfile, delimiter=';', quotechar ='|')
+        spamreader = csv.reader(csvfile, delimiter=',', quotechar ='|')
         for row in spamreader:
           
             if first :

@@ -26,5 +26,10 @@ plt.show()
 
 ```
 
+Next steps :
+
+- data as DataStream
+- retrieve approximatively same results as in the article
+- implement other algorithms (such as OCDD, )
 
 
