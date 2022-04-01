@@ -9,14 +9,14 @@ from skmultiflow.data.data_stream import DataStream
 class D3():
   
 
-    def __init__(self, data, win_size, rho, threshold):
+    def __init__(self, X, y, win_size, rho, threshold, dim):
         
         # The index of the current sample
-        self.index = 0
+        self.window_index = 1
 
         # X : data used, y : labels target of the data
-        self.stream = DataStream(data)
-        self.stream.prepare_for_use()
+        self.data_stream = DataStream(X, y)
+        self.data_stream.prepare_for_use()
 
         # Old and new sizes for the data windows
         self.new_size = int(win_size * rho)
@@ -24,6 +24,10 @@ class D3():
         self.window_size = int(win_size * (1+rho))
         self.rho = float(rho)
 
+        # X_window and y_window
+        self.X_window = np.zeros((self.window_size, dim))
+        self.y_window = np.zeros(self.window_size)
+        
         # Model_stream accuracy
         self.accuracy = 0
         self.predicted_size = 0
@@ -31,9 +35,6 @@ class D3():
         # Creating the machine learning models we will use
         self.model_stream = create_model_stream()
         self.model = create_model()
-
-        # List with every possible label for the model targets 
-        self.targets = list(set(y))
 
         # Threshold for the auc measure detection
         self.threshold = threshold
@@ -51,33 +52,46 @@ class D3():
 
     def run_all_steps(self):
         
-        while self.stream.has_more_samples() :
+        X,y = self.data_stream.next_sample()
+        self.addInstance(X,y)
+        self.model_stream_partial_fit(X, y)
+
+        while self.data_stream.has_more_samples() :
             
-            X,y = self.stream.next_sample(int(self.old_size*self.rho))
+            X,y = self.data_stream.next_sample()
 
-            X_window, y_window = self.X[self.index : self.index + self.window_size], self.y[self.index : self.index + self.window_size]
-            skf = StratifiedKFold(n_splits=2, shuffle=True)
-            self.model_stream_partial_fit(X_window, y_window, 0, self.old_size)
-            self.model_stream_predict(X_window, y_window, self.old_size, self.window_size)
-            self.model = create_model()
+            self.model_stream_predict(X, y)
+            self.model_stream_partial_fit(X, y)
 
-            for train_idx, test_idx in skf.split(X_window, y_window):
-                X_train = list()
-                y_train = list()
-                for idx in train_idx:
-                    X_train.append(X_window[idx])
-                    y_train.append(y_window[idx])
-                self.model_train(X_train, y_train)
-                self.model_predict(X_train, test_idx)
-            
-            if self.check_drift(y_window):
-                self.index += self.old_size
-                self.drift_count += 1
-                for i in range(self.old_size):
-                    self.error_rate_list.append(((self.predicted_size - self.accuracy) / self.predicted_size))
+            if self.window_index < self.window_size:
+                
+                """Here we just wait, we don't check if there is a drift because we don't have yet enough data samples"""
 
-            else :
-                self.index += self.new_size
+            else:
+
+                """ We now have enought data samples, we are going to check if there is a drift"""
+                skf = StratifiedKFold(n_splits=2, shuffle=True)
+                self.model = create_model()
+
+                for train_idx, test_idx in skf.split(self.X_window, self.y_window):
+                    X_train = list()
+                    y_train = list()
+                    for idx in train_idx:
+                        X_train.append(self.X_window[idx])
+                        y_train.append(self.y_window[idx])
+                    self.model_train(X_train, y_train)
+                    self.model_predict(X_train, test_idx)
+                 
+                if self.check_drift() :
+                    #create a self.model_reset function in case reset doesnt exist
+                    self.model_stream.reset()
+                    self.drift_count += 1
+                    self.window_index -= self.old_size
+
+                else :
+                    self.window_index -= self.new_size
+
+            self.addInstance(X,y)
 
         self.accuracy /= self.predicted_size
 
@@ -88,33 +102,35 @@ class D3():
 
     ### Run_all_steps loop functions :
 
-    def model_stream_predict(self, X_window, y_window, a, b):
 
-        predictions = self.model_stream.predict(X_window[a: b])
-        for i in range(len(predictions)):
-            if predictions[i] == y_window[i]:
-                self.accuracy += 1
-            self.predicted_size += 1 
-            self.error_rate_list.append((self.predicted_size - self.accuracy)/self.predicted_size)
+    def addInstance(self, X, y):
+        if(self.window_index < self.window_size):
+            self.X_window[self.window_index] = X
+            self.y_window[self.window_index] = y
+            self.window_index = self.window_index + 1
+        else:
+            print("Error: Buffer is full!")
 
+    def model_stream_predict(self, X, y):
 
-    def check_drift(self, y_window):
+        prediction = self.model_stream.predict(X)
+        if prediction == y:
+            self.accuracy += 1
+        self.predicted_size += 1 
+        self.error_rate_list.append((self.predicted_size - self.accuracy)/self.predicted_size)
+       
+    def model_stream_partial_fit(self, X, y):  
+        
+        self.model_stream.partial_fit(X, y, [0,1])
 
-        auc_score = AUC(y_window, self.probs) 
+    def check_drift(self):
+
+        auc_score = AUC(self.y_window, self.probs) 
         if auc_score > self.threshold or auc_score < self.threshold - 0.5 :
-            self.model_stream = create_model_stream()
             return True
         else:
             return False
         
-       
-    def model_stream_partial_fit(self, X_window, y_window, a, b):  
-        
-        for i in range (a, b):
-
-            self.model_stream.partial_fit([X_window[i]], [y_window[i]], self.targets)
-
-
 
     ### Loop for AUC functions :
 
